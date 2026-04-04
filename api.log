@@ -1,0 +1,29 @@
+
+  ╔══════════════════════════════════════════════════════════════╗
+  ║   ValoAnalytics API  v2.0  — puerto 3001                    ║
+  ╠══════════════════════════════════════════════════════════════╣
+  ║   NUEVAS RUTAS                                               ║
+  ║   GET  /api/maps                    → todos los mapas        ║
+  ║   GET  /api/maps/:name/image         → minimap CORS-safe     ║
+  ║   GET  /api/agents                  → todos los agentes      ║
+  ║   GET  /api/weapons                 → todas las armas        ║
+  ║   GET  /api/player/:r/:n/:t/matches → historial Henrik       ║
+  ║   GET  /api/match/:id               → partido normalizado    ║
+  ║   GET  /api/match/:id/heatmap       → kills [0,1] + grid     ║
+  ║   GET  /api/match/:id/timeline      → timeline pre-calculado ║
+  ╠══════════════════════════════════════════════════════════════╣
+  ║   RUTAS HEREDADAS (retrocompatibles)                         ║
+  ║   POST /riot-auth  ·  GET /riot-session  ·  POST /claude     ║
+  ║   GET  /pd/match-history  ·  GET /pd/match-details/:id       ║
+  ╚══════════════════════════════════════════════════════════════╝
+
+  Precargando assets de valorant-api.com...
+[assets] Cargando mapas de valorant-api.com...
+[assets] Cargando agentes...
+[assets] Cargando armas...
+[assets] 29 agentes cargados
+[assets] 22 mapas cargados
+[assets] 20 armas cargadas
+  ✓ Assets listos. Servidor operativo.
+
+^C

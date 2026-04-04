@@ -1,0 +1,330 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+@layer base {
+  :root {
+    /* Valorant-inspired dark theme */
+    --background: 220 25% 6%;
+    --foreground: 210 20% 96%;
+    --card: 220 22% 8%;
+    --card-foreground: 210 20% 96%;
+    --popover: 220 22% 8%;
+    --popover-foreground: 210 20% 96%;
+    --primary: 355 85% 58%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 18% 12%;
+    --secondary-foreground: 210 20% 96%;
+    --muted: 220 15% 15%;
+    --muted-foreground: 215 15% 55%;
+    --accent: 217 90% 55%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 15% 18%;
+    --input: 220 15% 15%;
+    --ring: 355 85% 58%;
+    --radius: 0.75rem;
+    
+    /* Custom colors */
+    --valorant-red: 355 85% 58%;
+    --valorant-blue: 217 90% 55%;
+    --valorant-green: 142 71% 45%;
+    --valorant-yellow: 45 93% 47%;
+    --valorant-purple: 262 83% 58%;
+    --valorant-cyan: 190 90% 50%;
+    
+    /* Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(var(--valorant-red)) 0%, hsl(355 70% 45%) 100%);
+    --gradient-accent: linear-gradient(135deg, hsl(var(--valorant-blue)) 0%, hsl(217 70% 45%) 100%);
+    --gradient-dark: linear-gradient(180deg, hsl(220 22% 10%) 0%, hsl(220 25% 6%) 100%);
+    --gradient-card: linear-gradient(180deg, hsl(220 20% 10%) 0%, hsl(220 22% 7%) 100%);
+    
+    /* Shadows */
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3);
+    --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.4), 0 2px 4px -2px rgb(0 0 0 / 0.4);
+    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.5), 0 4px 6px -4px rgb(0 0 0 / 0.5);
+    --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.6), 0 8px 10px -6px rgb(0 0 0 / 0.6);
+    --shadow-glow-red: 0 0 20px hsl(355 85% 58% / 0.3);
+    --shadow-glow-blue: 0 0 20px hsl(217 90% 55% / 0.3);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  
+  html {
+    scroll-behavior: smooth;
+  }
+  
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background: 
+      radial-gradient(ellipse 80% 50% at 20% 0%, hsl(217 90% 55% / 0.08) 0%, transparent 50%),
+      radial-gradient(ellipse 60% 40% at 80% 0%, hsl(355 85% 58% / 0.08) 0%, transparent 50%),
+      radial-gradient(ellipse 50% 30% at 50% 100%, hsl(142 71% 45% / 0.05) 0%, transparent 50%),
+      hsl(220 25% 6%);
+    background-attachment: fixed;
+    min-height: 100vh;
+  }
+  
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  
+  ::-webkit-scrollbar-track {
+    background: hsl(220 22% 8%);
+    border-radius: 4px;
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    background: hsl(220 15% 25%);
+    border-radius: 4px;
+  }
+  
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(220 15% 35%);
+  }
+  
+  /* Selection */
+  ::selection {
+    background: hsl(355 85% 58% / 0.3);
+    color: white;
+  }
+}
+
+@layer components {
+  /* Glass effect cards */
+  .glass-card {
+    @apply rounded-xl border backdrop-blur-md;
+    background: linear-gradient(180deg, hsl(220 20% 11% / 0.9) 0%, hsl(220 22% 8% / 0.95) 100%);
+    border-color: hsl(220 15% 20%);
+  }
+  
+  .glass-card-hover {
+    @apply glass-card transition-all duration-300;
+  }
+  
+  .glass-card-hover:hover {
+    border-color: hsl(355 85% 58% / 0.4);
+    box-shadow: 0 0 30px hsl(355 85% 58% / 0.1);
+  }
+  
+  /* Gradient text */
+  .gradient-text {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(135deg, hsl(355 85% 65%) 0%, hsl(217 90% 60%) 100%);
+  }
+  
+  /* Stat badges */
+  .stat-badge {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium;
+  }
+  
+  .stat-badge-success {
+    @apply stat-badge;
+    background: hsl(142 71% 45% / 0.15);
+    color: hsl(142 71% 55%);
+  }
+  
+  .stat-badge-danger {
+    @apply stat-badge;
+    background: hsl(0 72% 51% / 0.15);
+    color: hsl(0 72% 60%);
+  }
+  
+  .stat-badge-warning {
+    @apply stat-badge;
+    background: hsl(45 93% 47% / 0.15);
+    color: hsl(45 93% 55%);
+  }
+  
+  .stat-badge-info {
+    @apply stat-badge;
+    background: hsl(217 90% 55% / 0.15);
+    color: hsl(217 90% 65%);
+  }
+  
+  /* KPI cards */
+  .kpi-card {
+    @apply glass-card p-5 relative overflow-hidden;
+  }
+  
+  .kpi-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: var(--gradient-primary);
+    opacity: 0.6;
+  }
+  
+  /* Table styles */
+  .data-table {
+    @apply w-full border-collapse;
+  }
+  
+  .data-table th {
+    @apply text-left py-3 px-4 text-xs font-semibold uppercase tracking-wider;
+    color: hsl(215 15% 55%);
+    background: hsl(220 20% 9%);
+  }
+  
+  .data-table td {
+    @apply py-3 px-4 text-sm border-t;
+    border-color: hsl(220 15% 15%);
+  }
+  
+  .data-table tr:hover td {
+    background: hsl(220 20% 11%);
+  }
+  
+  /* Input styles */
+  .input-pro {
+    @apply px-4 py-2.5 rounded-lg border bg-transparent text-sm transition-all duration-200;
+    border-color: hsl(220 15% 20%);
+    color: hsl(210 20% 96%);
+  }
+  
+  .input-pro:focus {
+    @apply outline-none ring-2;
+    border-color: hsl(355 85% 58% / 0.5);
+    ring-color: hsl(355 85% 58% / 0.2);
+  }
+  
+  .input-pro::placeholder {
+    color: hsl(215 15% 40%);
+  }
+  
+  /* Button styles */
+  .btn-primary {
+    @apply px-4 py-2.5 rounded-lg font-medium text-sm transition-all duration-200 flex items-center gap-2;
+    background: var(--gradient-primary);
+    color: white;
+  }
+  
+  .btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-glow-red);
+  }
+  
+  .btn-secondary {
+    @apply px-4 py-2.5 rounded-lg font-medium text-sm transition-all duration-200 flex items-center gap-2;
+    background: hsl(220 15% 15%);
+    color: hsl(210 20% 96%);
+    border: 1px solid hsl(220 15% 22%);
+  }
+  
+  .btn-secondary:hover {
+    background: hsl(220 15% 20%);
+    border-color: hsl(220 15% 28%);
+  }
+  
+  /* Navigation */
+  .nav-item {
+    @apply flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200;
+    color: hsl(215 15% 55%);
+  }
+  
+  .nav-item:hover {
+    background: hsl(220 15% 12%);
+    color: hsl(210 20% 96%);
+  }
+  
+  .nav-item.active {
+    background: hsl(355 85% 58% / 0.1);
+    color: hsl(355 85% 65%);
+    border: 1px solid hsl(355 85% 58% / 0.3);
+  }
+  
+  /* Rank badges */
+  .rank-badge {
+    @apply w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm;
+  }
+  
+  .rank-1 {
+    @apply rank-badge;
+    background: linear-gradient(135deg, hsl(45 93% 47%) 0%, hsl(45 93% 35%) 100%);
+    color: white;
+    box-shadow: 0 0 15px hsl(45 93% 47% / 0.4);
+  }
+  
+  .rank-2 {
+    @apply rank-badge;
+    background: linear-gradient(135deg, hsl(215 15% 65%) 0%, hsl(215 15% 45%) 100%);
+    color: white;
+  }
+  
+  .rank-3 {
+    @apply rank-badge;
+    background: linear-gradient(135deg, hsl(30 60% 45%) 0%, hsl(30 60% 35%) 100%);
+    color: white;
+  }
+  
+  .rank-other {
+    @apply rank-badge;
+    background: hsl(220 15% 15%);
+    color: hsl(215 15% 55%);
+  }
+  
+  /* Agent role colors */
+  .role-duelist { color: hsl(0 72% 60%); }
+  .role-controller { color: hsl(262 83% 65%); }
+  .role-initiator { color: hsl(190 90% 55%); }
+  .role-sentinel { color: hsl(142 71% 55%); }
+  
+  /* Animations */
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateX(-20px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+  
+  @keyframes pulse-glow {
+    0%, 100% { box-shadow: 0 0 20px hsl(355 85% 58% / 0.3); }
+    50% { box-shadow: 0 0 30px hsl(355 85% 58% / 0.5); }
+  }
+  
+  .animate-fade-in {
+    animation: fadeIn 0.3s ease-out forwards;
+  }
+  
+  .animate-slide-in {
+    animation: slideIn 0.3s ease-out forwards;
+  }
+  
+  .animate-pulse-glow {
+    animation: pulse-glow 2s ease-in-out infinite;
+  }
+  
+  /* Chart tooltip */
+  .chart-tooltip {
+    @apply rounded-lg px-3 py-2 text-sm;
+    background: hsl(220 22% 8% / 0.95);
+    border: 1px solid hsl(220 15% 20%);
+    backdrop-filter: blur(8px);
+  }
+}
+
+@layer utilities {
+  .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+  }
+  
+  .text-balance {
+    text-wrap: balance;
+  }
+}

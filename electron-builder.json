@@ -1,0 +1,39 @@
+{
+  "appId": "com.valoanalytics.pro",
+  "productName": "ValoAnalytics Pro",
+  "copyright": "ValoAnalytics Pro",
+  "directories": {
+    "output": "release",
+    "buildResources": "electron/assets"
+  },
+  "files": [
+    "dist/**/*",
+    "electron/**/*",
+    "node_modules/**/*",
+    "package.json"
+  ],
+  "extraResources": [
+    { "from": "valoanalytics-api.cjs", "to": "api/valoanalytics-api.cjs" },
+    { "from": "node_modules",          "to": "api/node_modules", "filter": ["**/*"] }
+  ],
+  "win": {
+    "target": [
+      { "target": "nsis",     "arch": ["x64"] },
+      { "target": "portable", "arch": ["x64"] }
+    ],
+    "icon": "electron/assets/icon.ico",
+    "requestedExecutionLevel": "asInvoker"
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "ValoAnalytics Pro",
+    "runAfterFinish": true
+  },
+  "portable": {
+    "artifactName": "ValoAnalytics-Pro-Portable-${version}.exe"
+  },
+  "publish": null
+}
