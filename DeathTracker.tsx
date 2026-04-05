@@ -14,23 +14,45 @@ const MAPS = [
   'Abyss','Corrode','Lotus','Fracture','Icebox','Sunset',
 ];
 
-// ── URLs directas a CDN oficial de Valorant (CORS abierto: *) ─────────────────
-// media.valorant-api.com tiene Access-Control-Allow-Origin: *
-// funcionan con fetch() desde Electron y desde cualquier browser
-const MAP_CDN: Record<string, string> = {
-  'Ascent':   'https://media.valorant-api.com/maps/7eaecc1b-4337-bbf6-6ab9-04b8f06b3319/minimap.png',
-  'Bind':     'https://media.valorant-api.com/maps/2fe4ed3a-4166-11ea-bb37-41c6e48c6c5c/minimap.png',
-  'Haven':    'https://media.valorant-api.com/maps/2bee0dc9-4ffe-519b-1cbd-7825ad097c59/minimap.png',
-  'Split':    'https://media.valorant-api.com/maps/d960549e-485c-e861-8d71-aa9d1aed12a2/minimap.png',
-  'Pearl':    'https://media.valorant-api.com/maps/33bb57b4-4acb-3a53-e89c-6d9e739b2d90/minimap.png',
-  'Breeze':   'https://media.valorant-api.com/maps/2c9d57ec-4431-9c5e-9bc2-b9c2b6d6c6f4/minimap.png',
-  'Abyss':    'https://media.valorant-api.com/maps/224b0a95-48b9-f703-1bd8-67aca101a61f/minimap.png',
-  'Lotus':    'https://media.valorant-api.com/maps/da7b4fd9-4bf7-8748-e98b-7aef7398b8c9/minimap.png',
-  'Fracture': 'https://media.valorant-api.com/maps/b529448b-4d60-346e-e89e-00a4c527a405/minimap.png',
-  'Icebox':   'https://media.valorant-api.com/maps/e2ad5c54-4114-a870-9641-8ea21279579a/minimap.png',
-  'Sunset':   'https://media.valorant-api.com/maps/92584fbe-486a-b1b2-9faa-39d9a5e3eba5/minimap.png',
-  'Corrode':  'https://media.valorant-api.com/maps/c4e5764e-4700-5c39-4e20-aaab8fbf73ea/minimap.png',
-};
+// ── URLs de minimaps: cargadas dinámicamente desde valorant-api.com ──────────
+// Elimina el problema de UUIDs hardcodeados que se quedan obsoletos
+let _mapCdnCache: Record<string, string> = {};
+let _mapCdnLoaded = false;
+let _mapCdnPromise: Promise<void> | null = null;
+
+function loadMapCdnUrls(): Promise<void> {
+  if (_mapCdnLoaded) return Promise.resolve();
+  if (_mapCdnPromise) return _mapCdnPromise;
+  _mapCdnPromise = fetch('https://valorant-api.com/v1/maps')
+    .then(r => r.json())
+    .then(json => {
+      (json.data || []).forEach((m: any) => {
+        if (m.displayName && m.minimap) {
+          _mapCdnCache[m.displayName] = m.minimap;
+        }
+      });
+      _mapCdnLoaded = true;
+    })
+    .catch(() => {
+      // Si falla la API, usar URLs de fallback con UUIDs conocidos
+      _mapCdnCache = {
+        'Ascent':   'https://media.valorant-api.com/maps/7eaecc1b-4337-bbf6-6ab9-04b8f06b3319/minimap.png',
+        'Bind':     'https://media.valorant-api.com/maps/2c9d57ec-4431-9c5e-2cec-1ab2a0952923/minimap.png',
+        'Haven':    'https://media.valorant-api.com/maps/2bee0dc9-4ffe-519b-1cbd-7825ad097c59/minimap.png',
+        'Split':    'https://media.valorant-api.com/maps/d960549e-485c-e861-8d71-aa9d1aed12a2/minimap.png',
+        'Pearl':    'https://media.valorant-api.com/maps/fd267378-4d1d-484f-ff52-77821ed10dc2/minimap.png',
+        'Breeze':   'https://media.valorant-api.com/maps/2fb9a4fd-47b8-4e7d-a969-74b4046ebd53/minimap.png',
+        'Abyss':    'https://media.valorant-api.com/maps/224b0a95-48b9-f703-1bd8-67aca101a61f/minimap.png',
+        'Lotus':    'https://media.valorant-api.com/maps/2fe4ed3a-4166-11e1-bb37-2fb9a0952923/minimap.png',
+        'Fracture': 'https://media.valorant-api.com/maps/b529448b-4d60-346e-e89e-00a4c527a405/minimap.png',
+        'Icebox':   'https://media.valorant-api.com/maps/e2ad5c54-4114-a870-9641-8ea21279579a/minimap.png',
+        'Sunset':   'https://media.valorant-api.com/maps/92584fbe-486a-b1b2-9faa-39d9a5e3eba5/minimap.png',
+        'Corrode':  'https://media.valorant-api.com/maps/c4e5764e-4700-5c39-4e20-aaab8fbf73ea/minimap.png',
+      };
+      _mapCdnLoaded = true;
+    });
+  return _mapCdnPromise;
+}
 
 // ── Caché de imágenes cargadas (HTMLImageElement) ─────────────────────────────
 const _imgCache: Record<string, HTMLImageElement | 'loading' | 'error'> = {};
@@ -42,14 +64,12 @@ function loadMapImageCached(
 ): void {
   const cached = _imgCache[mapName];
   if (cached === 'loading') {
-    // Ya se está cargando, encolar el callback
     (_imgCallbacks[mapName] = _imgCallbacks[mapName] || []).push(cb);
     return;
   }
   if (cached instanceof HTMLImageElement) { cb(cached); return; }
   if (cached === 'error') { cb(null); return; }
 
-  // Primera vez: iniciar carga
   _imgCache[mapName] = 'loading';
   _imgCallbacks[mapName] = [cb];
 
@@ -61,30 +81,29 @@ function loadMapImageCached(
 
   const tryLoad = (url: string, onSuccess: (img: HTMLImageElement) => void, onFail: () => void) => {
     const img = new Image();
-    img.crossOrigin = 'anonymous'; // necesario para dibujar en canvas sin tainting
+    img.crossOrigin = 'anonymous';
     img.onload  = () => onSuccess(img);
     img.onerror = () => onFail();
     img.src = url;
   };
 
-  const cdnUrl = MAP_CDN[mapName];
-
-  if (cdnUrl) {
-    // Intento 1: CDN directo (funciona en Electron/browser con CORS abierto)
-    tryLoad(
-      cdnUrl,
-      img => notifyAll(img),
-      () => {
-        // Intento 2: a través del servidor local (si está corriendo)
-        const localUrl = `http://localhost:3001/api/maps/${encodeURIComponent(mapName)}/image`;
-        tryLoad(localUrl, img => notifyAll(img), () => notifyAll(null));
-      },
-    );
-  } else {
-    // Mapa sin UUID conocido: intentar servidor local directamente
-    const localUrl = `http://localhost:3001/api/maps/${encodeURIComponent(mapName)}/image`;
-    tryLoad(localUrl, img => notifyAll(img), () => notifyAll(null));
-  }
+  // Primero asegurar que tenemos las URLs del CDN cargadas
+  loadMapCdnUrls().then(() => {
+    const cdnUrl = _mapCdnCache[mapName];
+    if (cdnUrl) {
+      tryLoad(
+        cdnUrl,
+        img => notifyAll(img),
+        () => {
+          const localUrl = `http://localhost:3001/api/maps/${encodeURIComponent(mapName)}/image`;
+          tryLoad(localUrl, img => notifyAll(img), () => notifyAll(null));
+        },
+      );
+    } else {
+      const localUrl = `http://localhost:3001/api/maps/${encodeURIComponent(mapName)}/image`;
+      tryLoad(localUrl, img => notifyAll(img), () => notifyAll(null));
+    }
+  });
 }
 
 // ── Constantes ─────────────────────────────────────────────────────────────────

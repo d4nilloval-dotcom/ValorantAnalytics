@@ -63,6 +63,7 @@ const navItems = [
   { id: 'goals',           label: 'Objetivos',         icon: Target },
   { id: 'team-timeline',   label: 'Timeline Equipo',   icon: TrendingUp },
   { id: 'scrim-notes',     label: 'Scrim Notes',        icon: StickyNote },
+  { id: 'match-compare',   label: 'Comparador',         icon: GitCompare },
 ];
 
 export function Layout({ children }: { children: React.ReactNode }) {

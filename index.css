@@ -328,3 +328,48 @@
     text-wrap: balance;
   }
 }
+
+/* ── Light Theme Override ────────────────────────────────────────────────── */
+.light-theme {
+  --background: 0 0% 98%;
+  --foreground: 220 20% 10%;
+  --card: 0 0% 100%;
+  --card-foreground: 220 20% 10%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 220 20% 10%;
+  --primary: 355 85% 52%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 220 12% 92%;
+  --secondary-foreground: 220 20% 10%;
+  --muted: 220 10% 92%;
+  --muted-foreground: 215 10% 45%;
+  --accent: 217 80% 50%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 220 10% 85%;
+  --input: 220 10% 90%;
+  --ring: 355 85% 52%;
+}
+
+.light-theme body {
+  background: hsl(0 0% 96%);
+  color: hsl(220 20% 10%);
+}
+
+.light-theme .glass-card {
+  background: hsl(0 0% 100% / 0.9);
+  border-color: hsl(220 10% 85%);
+  backdrop-filter: blur(8px);
+}
+
+.light-theme .btn-primary {
+  background: hsl(355 85% 52%);
+}
+
+.light-theme .input-pro {
+  background: hsl(220 10% 96%);
+  border-color: hsl(220 10% 85%);
+  color: hsl(220 20% 10%);
+}
+

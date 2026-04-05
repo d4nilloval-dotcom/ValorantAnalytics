@@ -1236,15 +1236,28 @@ const server = http.createServer(async (req, res) => {
           data: {
             matchId,
             mapName:      match.metadata.map,
-            imageUrl:     (() => {
-              // Servir como base64 para evitar CORS/CSP en Electron
-              const cached = cache.mapImages.get(mapMeta?.displayName || '');
+            imageUrl:     await (async () => {
+              // Intentar servir base64 desde cache
+              const displayName = mapMeta?.displayName || match.metadata.map || '';
+              let cached = cache.mapImages.get(displayName);
+
+              // Si no está en cache, descargarlo ahora
+              if (!cached && mapMeta?.minimap) {
+                try {
+                  const imgRes = await httpsGetImage(mapMeta.minimap);
+                  if (imgRes.status === 200) {
+                    cached = { contentType: imgRes.contentType, body: imgRes.body };
+                    cache.mapImages.set(displayName, cached);
+                  }
+                } catch(_) {}
+              }
+
               if (cached) {
                 const b64 = cached.body.toString('base64');
                 const mime = cached.contentType.split(';')[0] || 'image/png';
                 return `data:${mime};base64,${b64}`;
               }
-              // Fallback: URL directa (funciona si el servidor tiene acceso a internet)
+              // Fallback: URL directa del CDN
               return mapMeta?.minimap || '';
             })(),
             transform:    match.metadata.mapTransform,
@@ -1274,7 +1287,8 @@ const server = http.createServer(async (req, res) => {
       let match = cache.matches.get(matchId);
       if (!match || Date.now() - match._normalizedAt >= cache.MATCH_TTL) {
         try {
-          const raw = await henrikFetch(`/v2/match/${encodeURIComponent(matchId)}`, henrikKey);
+          const hKey = req.headers['x-henrik-key'] || '';
+          const raw = await henrikFetch(`/v2/match/${encodeURIComponent(matchId)}`, hKey);
           match = await normalizeMatch(raw);
           cache.matches.set(matchId, match);
         } catch(e) { return sendError(res, 500, e.message); }

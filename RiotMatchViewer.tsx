@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Search, Loader2, ChevronDown, ChevronRight, PlayCircle, Download, CheckCircle,
   Skull, Activity, Users, BarChart3,
@@ -748,27 +748,105 @@ function worldToCanvas(x: number, y: number, mapId: string, size: number): {px: 
     // Fallback genérico mientras carga
     return { px: (x + 100000) / 200000 * size, py: (1 - (y + 100000) / 200000) * size };
   }
+  // yMultiplier de valorant-api.com ya es negativo → produce ny ∈ [0,1] directamente
+  // NO aplicar (1 - ...) porque eso lo invierte de nuevo (heatmap al revés)
   return {
     px: (x * meta.xMultiplier + meta.xScalarToAdd) * size,
-    py: (1 - (y * meta.yMultiplier + meta.yScalarToAdd)) * size,
+    py: (y * meta.yMultiplier + meta.yScalarToAdd) * size,
   };
 }
 
-// ─── Heatmap Tab ──────────────────────────────────────────────────────────────
+// ─── Heatmap local (fallback sin servidor) ──────────────────────────────────
+// Construye grid + killPoints desde los kills ya normalizados del match
+function buildLocalHeatmap(
+  allKills: any[], gridSize: number, team: string, puuid: string, selRound: number
+) {
+  const grid = Array.from({ length: gridSize }, () =>
+    Array.from({ length: gridSize }, () => ({ kills: 0, deaths: 0, diff: 0, engagements: 0 }))
+  );
 
-// ─── Heatmap Tab — Grid NxN estilo valolytics ─────────────────────────────────
-// Usa el endpoint /api/match/:id/heatmap de la API propia
-// que ya devuelve: grid[row][col]{kills,deaths,diff,engagements}, killPoints[]{norm{nx,ny}},
+  const filtered = allKills.filter((k: any) => {
+    if (team !== 'all') {
+      const kTeam = k.killerTeam || k.killer_team || '';
+      const vTeam = k.victimTeam || k.victim_team || '';
+      if (kTeam !== team && vTeam !== team) return false;
+    }
+    if (puuid) {
+      const kPuuid = k.killerPuuid || k.killer_puuid || '';
+      const vPuuid = k.victimPuuid || k.victim_puuid || '';
+      if (kPuuid !== puuid && vPuuid !== puuid) return false;
+    }
+    if (selRound >= 0 && k.round !== selRound) return false;
+    return true;
+  });
 
+  let coordKills = 0;
+  const killPoints: any[] = [];
+
+  for (const k of filtered) {
+    const killerNorm = k.killerLocationNorm;
+    const victimNorm = k.victimLocationNorm;
+
+    if (killerNorm?.nx >= 0 && killerNorm?.nx <= 1 && killerNorm?.ny >= 0 && killerNorm?.ny <= 1) {
+      const c = Math.min(gridSize - 1, Math.floor(killerNorm.nx * gridSize));
+      const r = Math.min(gridSize - 1, Math.floor(killerNorm.ny * gridSize));
+      grid[r][c].kills++;
+      grid[r][c].engagements++;
+    }
+    if (victimNorm?.nx >= 0 && victimNorm?.nx <= 1 && victimNorm?.ny >= 0 && victimNorm?.ny <= 1) {
+      const c = Math.min(gridSize - 1, Math.floor(victimNorm.nx * gridSize));
+      const r = Math.min(gridSize - 1, Math.floor(victimNorm.ny * gridSize));
+      grid[r][c].deaths++;
+      grid[r][c].engagements++;
+    }
+
+    if (killerNorm || victimNorm) {
+      coordKills++;
+      killPoints.push({
+        killerNorm,
+        victimNorm,
+        killerTeam: k.killerTeam || k.killer_team || '',
+        victimTeam: k.victimTeam || k.victim_team || '',
+      });
+    }
+  }
+
+  for (const row of grid) for (const c of row) c.diff = c.kills - c.deaths;
+  return { grid, killPoints, coordKills };
+}
 
 // ─── Heatmap Tab ─────────────────────────────────────────────────────────────
-// Arquitectura definitiva:
-// 1. Servidor: GET /api/match/:id/heatmap-render → JSON con grid, kill points, imageUrl
-// 2. Frontend: <img src={imageUrl}> para el mapa + <svg> overlay para el heatmap
-//    Sin canvas → Sin CORS. La imagen se carga como cualquier <img> normal.
+// <img> para el mapa + SVG overlay para heatmap
+// Tres fuentes de imagen (en orden de prioridad):
+//   1. base64 data URI del servidor (heatData.imageUrl)
+//   2. servidor local proxy (localhost:3001/api/maps/:name/image)
+//   3. CDN directo (media.valorant-api.com) — CORS abierto
 
 type HeatmapMode   = 'diff' | 'engagements' | 'kills' | 'deaths';
 type HeatmapFilter = 'all'  | 'Blue' | 'Red';
+
+// Cache de URLs de minimaps por nombre de mapa (cargado de valorant-api.com)
+const _minimapUrlCache: Record<string, string> = {};
+let _minimapCacheLoaded = false;
+let _minimapCachePromise: Promise<void> | null = null;
+
+function ensureMinimapCache(): Promise<void> {
+  if (_minimapCacheLoaded) return Promise.resolve();
+  if (_minimapCachePromise) return _minimapCachePromise;
+  _minimapCachePromise = fetch('https://valorant-api.com/v1/maps')
+    .then(r => r.json())
+    .then(json => {
+      (json.data || []).forEach((m: any) => {
+        if (m.displayName && m.minimap) {
+          _minimapUrlCache[m.displayName] = m.minimap;
+          _minimapUrlCache[m.displayName.toLowerCase()] = m.minimap;
+        }
+      });
+      _minimapCacheLoaded = true;
+    })
+    .catch(() => { _minimapCacheLoaded = true; });
+  return _minimapCachePromise;
+}
 
 function HeatmapTab({ match, focusPuuid, setFocusPuuid }: any) {
   const matchId    = match?.matchId || match?.metadata?.matchid || '';
@@ -777,8 +855,6 @@ function HeatmapTab({ match, focusPuuid, setFocusPuuid }: any) {
   const allKills:  any[] = match?.kills    || [];
   const allPlayers:any[] = match?.players?.all || match?.players?.all_players || [];
   const apiKey = getHenrikKey();
-
-  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const [mode,      setMode]      = useState<HeatmapMode>('diff');
   const [team,      setTeam]      = useState<HeatmapFilter>('all');
@@ -789,109 +865,129 @@ function HeatmapTab({ match, focusPuuid, setFocusPuuid }: any) {
   const [heatData,  setHeatData]  = useState<any>(null);
   const [loading,   setLoading]   = useState(false);
   const [error,     setError]     = useState<string|null>(null);
-  const [mapImg,    setMapImg]    = useState<HTMLImageElement|null>(null);
+  const [mapImgSrc, setMapImgSrc] = useState<string>('');
+  const [mapLoaded, setMapLoaded] = useState(false);
+  const [imgAttempt, setImgAttempt] = useState(0); // para forzar reintento
 
-  // ── 1. Cargar datos del servidor ───────────────────────────────────────────
+  // ── 1. Cargar datos del servidor (con fallback y loading correcto) ────────
   useEffect(() => {
     if (!matchId) return;
+    let cancelled = false;
     setLoading(true);
     setError(null);
+
     const p = new URLSearchParams({
       grid: String(G), team, round: String(selRound),
       ...(focusPuuid ? { puuid: focusPuuid } : {}),
     });
     const headers: Record<string, string> = { Accept: 'application/json' };
     if (apiKey) headers['x-henrik-key'] = apiKey;
-    fetch(`http://localhost:3001/api/match/${encodeURIComponent(matchId)}/heatmap-render?${p}`, { headers })
-      .then(r => r.json())
-      .then(json => {
-        if (json.error) throw new Error(json.error);
-        setHeatData(json.data);
-      })
-      .catch(e => setError(e.message))
-      .finally(() => setLoading(false));
-  }, [matchId, G, team, selRound, focusPuuid]);
 
-  // ── 2. Cargar imagen del mapa ────────────────────────────────────────────────
-  useEffect(() => {
-    if (!heatData?.imageUrl) { setMapImg(null); return; }
-    const url = heatData.imageUrl;
-    const img = new Image();
-    img.crossOrigin = 'anonymous'; // imprescindible para canvas sin taint
+    const tryFetch = async () => {
+      // Intento 1: heatmap-render (devuelve grid + imageUrl base64)
+      try {
+        const r1 = await fetch(`http://localhost:3001/api/match/${encodeURIComponent(matchId)}/heatmap-render?${p}`, { headers });
+        const j1 = await r1.json();
+        if (j1.error) throw new Error(j1.error);
+        if (!cancelled) { setHeatData(j1.data); setLoading(false); }
+        return;
+      } catch (_) {}
 
-    const onLoaded = () => setMapImg(img);
-    const onFailed = () => {
-      // Si la URL externa falla, intentar con el servidor local
-      if (!url.startsWith('data:') && !url.includes('localhost')) {
-        const mapName = heatData.mapName || '';
-        const localUrl = `http://localhost:3001/api/maps/${encodeURIComponent(mapName)}/image`;
-        const img2 = new Image();
-        img2.crossOrigin = 'anonymous';
-        img2.onload  = () => setMapImg(img2);
-        img2.onerror = () => setMapImg(null); // sin imagen — canvas mostrará fondo oscuro
-        img2.src = localUrl;
-      } else {
-        setMapImg(null);
+      // Intento 2: heatmap clásico
+      try {
+        const r2 = await fetch(`http://localhost:3001/api/match/${encodeURIComponent(matchId)}/heatmap?${p}`, { headers });
+        const j2 = await r2.json();
+        if (j2.error) throw new Error(j2.error);
+        if (!cancelled) { setHeatData(j2.data); setLoading(false); }
+        return;
+      } catch (_) {}
+
+      // Intento 3: construir heatmap localmente desde los kills del match
+      if (!cancelled) {
+        const localGrid = buildLocalHeatmap(allKills, G, team, focusPuuid, selRound);
+        setHeatData({
+          grid: localGrid.grid,
+          gridSize: G,
+          killPoints: localGrid.killPoints,
+          plants: [],
+          callouts: [],
+          totalKills: allKills.length,
+          coordKills: localGrid.coordKills,
+          mapName,
+          imageUrl: '', // se resolverá por separado
+        });
+        setLoading(false);
       }
     };
 
-    img.onload  = onLoaded;
-    img.onerror = onFailed;
+    tryFetch().catch(e => {
+      if (!cancelled) { setError(e.message); setLoading(false); }
+    });
 
-    if (url.startsWith('data:')) {
-      // Base64 del servidor → carga directa (no necesita fetch ni CORS)
-      img.src = url;
-    } else {
-      // URL externa → intentar fetch para convertir a blob URL (evita taint de canvas)
-      fetch(url, { mode: 'cors' })
-        .then(r => {
-          if (!r.ok) throw new Error('HTTP ' + r.status);
-          return r.blob();
-        })
-        .then(blob => { img.src = URL.createObjectURL(blob); })
-        .catch(() => {
-          // Si fetch falla, intentar carga directa (funciona en Electron sin CORS estricto)
-          img.src = url;
-        });
-    }
-  }, [heatData?.imageUrl]);
+    return () => { cancelled = true; };
+  }, [matchId, G, team, selRound, focusPuuid, apiKey]);
 
-  // ── 3. Dibujar en canvas cuando cambian datos o imagen ────────────────────
+  // ── 2. Resolver la mejor URL de imagen del mapa ───────────────────────────
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !heatData) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    setMapLoaded(false);
 
-    const W = canvas.width;
-    const H = canvas.height;
-    ctx.clearRect(0, 0, W, H);
-
-    // 3a. Fondo oscuro
-    ctx.fillStyle = '#0a0b12';
-    ctx.fillRect(0, 0, W, H);
-
-    // 3b. Imagen del mapa — ocupa TODO el canvas (mismo espacio que los datos)
-    if (mapImg) {
-      ctx.globalAlpha = 0.78;
-      ctx.drawImage(mapImg, 0, 0, W, H);
-      ctx.globalAlpha = 1;
-      // Overlay oscuro leve para mejorar contraste del heatmap
-      ctx.fillStyle = 'rgba(0,0,8,0.18)';
-      ctx.fillRect(0, 0, W, H);
+    // Prioridad 1: base64 del servidor
+    if (heatData?.imageUrl && heatData.imageUrl.startsWith('data:')) {
+      setMapImgSrc(heatData.imageUrl);
+      return;
     }
 
-    // 3c. Grid de calor
-    const g = heatData.grid || [];
+    // Prioridad 2: URL del servidor (puede ser CDN o local)
+    if (heatData?.imageUrl && heatData.imageUrl.length > 10) {
+      setMapImgSrc(heatData.imageUrl);
+      return;
+    }
+
+    // Prioridad 3: servidor local proxy
+    if (mapName) {
+      setMapImgSrc(`http://localhost:3001/api/maps/${encodeURIComponent(mapName)}/image`);
+      return;
+    }
+
+    setMapImgSrc('');
+  }, [heatData?.imageUrl, mapName, imgAttempt]);
+
+  // ── Fallback en onError de la imagen ──────────────────────────────────────
+  const handleImgError = async () => {
+    // Si ya intentamos con el CDN directo, rendirse
+    if (mapImgSrc.includes('media.valorant-api.com')) {
+      setMapLoaded(false);
+      return;
+    }
+    // Si intentamos con localhost y falló, ir al CDN directo
+    if (mapImgSrc.includes('localhost') && mapName) {
+      await ensureMinimapCache();
+      const cdnUrl = _minimapUrlCache[mapName] || _minimapUrlCache[mapName.toLowerCase()];
+      if (cdnUrl) {
+        setMapImgSrc(cdnUrl);
+        return;
+      }
+    }
+    // Si intentamos con una URL data: o desconocida, ir a localhost
+    if (mapName && !mapImgSrc.includes('localhost')) {
+      setMapImgSrc(`http://localhost:3001/api/maps/${encodeURIComponent(mapName)}/image`);
+      return;
+    }
+    setMapLoaded(false);
+  };
+
+  // ── 3. Calcular celdas del grid con colores ───────────────────────────────
+  const gridCells = useMemo(() => {
+    if (!heatData?.grid) return [];
+    const g: any[][] = heatData.grid;
     const gSize = heatData.gridSize || G;
     let maxVal = 1;
     for (const row of g) for (const c of row) {
       const v = Math.abs(mode === 'diff' ? c.diff : mode === 'kills' ? c.kills : mode === 'deaths' ? c.deaths : c.engagements);
       if (v > maxVal) maxVal = v;
     }
-    const cellW = W / gSize;
-    const cellH = H / gSize;
-
+    const cells: { x: number; y: number; w: number; h: number; color: string }[] = [];
+    const cellPct = 100 / gSize;
     for (let ri = 0; ri < g.length; ri++) {
       for (let ci = 0; ci < (g[ri]?.length || 0); ci++) {
         const c = g[ri][ci];
@@ -911,110 +1007,11 @@ function HeatmapTab({ match, focusPuuid, setFocusPuuid }: any) {
           const gg = Math.round(255 * (1 - norm * 0.85));
           color = `rgba(255,${gg},0,${(norm * 0.85).toFixed(3)})`;
         }
-        ctx.fillStyle = color;
-        ctx.fillRect(ci * cellW, ri * cellH, cellW, cellH);
+        cells.push({ x: ci * cellPct, y: ri * cellPct, w: cellPct, h: cellPct, color });
       }
     }
-
-    // 3d. Puntos de kills y muertes
-    if (showPts) {
-      const kpts: any[] = heatData.killPoints || [];
-      for (const k of kpts) {
-        // Víctima → punto rojo
-        if (k.victimNorm) {
-          const cx = k.victimNorm.nx * W;
-          const cy = k.victimNorm.ny * H;
-          ctx.beginPath();
-          ctx.arc(cx, cy, 3.5, 0, Math.PI * 2);
-          ctx.fillStyle = k.victimTeam === 'Blue' ? 'rgba(59,130,246,0.9)' : 'rgba(239,68,68,0.9)';
-          ctx.fill();
-          ctx.strokeStyle = 'rgba(0,0,0,0.6)';
-          ctx.lineWidth = 0.8;
-          ctx.stroke();
-        }
-        // Killer → punto verde
-        if (k.killerNorm) {
-          const cx = k.killerNorm.nx * W;
-          const cy = k.killerNorm.ny * H;
-          ctx.beginPath();
-          ctx.arc(cx, cy, 2.5, 0, Math.PI * 2);
-          ctx.fillStyle = 'rgba(34,197,94,0.8)';
-          ctx.fill();
-          ctx.strokeStyle = 'rgba(0,0,0,0.5)';
-          ctx.lineWidth = 0.6;
-          ctx.stroke();
-        }
-      }
-    }
-
-    // 3e. Plantas de spike
-    const plants: any[] = heatData.plants || [];
-    for (const p of plants) {
-      const cx = p.nx * W;
-      const cy = p.ny * H;
-      ctx.beginPath();
-      ctx.arc(cx, cy, 9, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(251,191,36,0.25)';
-      ctx.fill();
-      ctx.strokeStyle = '#FBB724';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      ctx.font = '14px serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('💣', cx, cy);
-    }
-
-    // 3f. Callouts (zonas)
-    if (showZones) {
-      const callouts: any[] = heatData.callouts || [];
-      ctx.font = 'bold 9px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      for (const co of callouts) {
-        const cx = co.nx * W;
-        const cy = co.ny * H;
-        const tw = ctx.measureText(co.name).width;
-        ctx.fillStyle = 'rgba(0,0,0,0.65)';
-        ctx.fillRect(cx - tw / 2 - 3, cy - 7, tw + 6, 14);
-        ctx.fillStyle = 'rgba(255,255,255,0.85)';
-        ctx.fillText(co.name, cx, cy);
-      }
-    }
-
-    // 3g. Leyenda
-    ctx.fillStyle = 'rgba(6,8,18,0.92)';
-    ctx.beginPath();
-    ctx.roundRect(6, H - 68, 182, 62, 4);
-    ctx.fill();
-    const legendItems = mode === 'diff'
-      ? [['#22c55e', 'Zona dominante (kills)'], ['#ef4444', 'Zona peligrosa (muertes)']]
-      : mode === 'kills'  ? [['#22c55e', 'Kills']]
-      : mode === 'deaths' ? [['#ef4444', 'Muertes']]
-      : [['#facc15', 'Alta actividad'], ['#f97316', 'Zona caliente']];
-    legendItems.forEach(([color, label], i) => {
-      ctx.fillStyle = color;
-      ctx.fillRect(12, H - 56 + i * 22, 10, 10);
-      ctx.fillStyle = 'white';
-      ctx.font = '10px sans-serif';
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(label, 28, H - 56 + i * 22 + 5);
-    });
-
-    // 3h. Contador coords
-    const coordKills = heatData.coordKills || 0;
-    const totalKills = heatData.totalKills || 0;
-    const label = `${coordKills}/${totalKills} coords · ${mapName}`;
-    ctx.font = '10px monospace';
-    ctx.textAlign = 'right';
-    const lw = ctx.measureText(label).width;
-    ctx.fillStyle = 'rgba(6,8,18,0.88)';
-    ctx.fillRect(W - lw - 14, 4, lw + 10, 18);
-    ctx.fillStyle = coordKills > 0 ? '#22c55e' : '#f87171';
-    ctx.fillText(label, W - 7, 13);
-
-  }, [heatData, mapImg, mode, showPts, showZones, G]);
+    return cells;
+  }, [heatData, mode, G]);
 
   // ── Métricas ───────────────────────────────────────────────────────────────
   const coordKills = heatData?.coordKills || 0;
@@ -1138,21 +1135,105 @@ function HeatmapTab({ match, focusPuuid, setFocusPuuid }: any) {
         </div>
       )}
 
-      {/* ── Canvas: imagen + heatmap renderizados juntos ────────────────────── */}
+      {/* ── Mapa + Heatmap SVG overlay (sin canvas, sin CORS) ───────────────── */}
       <div className="relative mx-auto rounded-xl overflow-hidden"
         style={{ aspectRatio: '1/1', maxWidth: 560, background: '#0a0b12' }}>
 
-        {/* Canvas principal — todo se dibuja aquí */}
-        <canvas
-          ref={canvasRef}
-          width={512}
-          height={512}
-          className="w-full h-full block"
-        />
+        {/* Imagen del mapa — cadena de fallback: base64 → localhost → CDN */}
+        {mapImgSrc && (
+          <img
+            src={mapImgSrc}
+            alt={mapName}
+            className="absolute inset-0 w-full h-full object-cover"
+            style={{ opacity: mapLoaded ? 0.78 : 0 }}
+            onLoad={() => setMapLoaded(true)}
+            onError={() => handleImgError()}
+          />
+        )}
+        {/* Fondo si no hay imagen */}
+        {!mapLoaded && !loading && (
+          <div className="absolute inset-0" style={{ background: '#0a0b12' }} />
+        )}
+
+        {/* SVG overlay con heatmap grid + puntos + plantas + zonas */}
+        <svg viewBox="0 0 100 100" preserveAspectRatio="none"
+          className="absolute inset-0 w-full h-full" style={{ zIndex: 1 }}>
+          {/* Grid de calor */}
+          {gridCells.map((cell, i) => (
+            <rect key={i} x={cell.x} y={cell.y} width={cell.w} height={cell.h} fill={cell.color} />
+          ))}
+        </svg>
+
+        {/* SVG overlay con puntos (preserveAspectRatio mantiene círculos redondos) */}
+        <svg viewBox="0 0 512 512" preserveAspectRatio="xMidYMid meet"
+          className="absolute inset-0 w-full h-full" style={{ zIndex: 2 }}>
+          {/* Kill/death points */}
+          {showPts && (heatData?.killPoints || []).map((k: any, i: number) => (
+            <g key={i}>
+              {k.victimNorm && (
+                <circle cx={k.victimNorm.nx * 512} cy={k.victimNorm.ny * 512} r={3.5}
+                  fill={k.victimTeam === 'Blue' ? 'rgba(59,130,246,0.9)' : 'rgba(239,68,68,0.9)'}
+                  stroke="rgba(0,0,0,0.6)" strokeWidth={0.8} />
+              )}
+              {k.killerNorm && (
+                <circle cx={k.killerNorm.nx * 512} cy={k.killerNorm.ny * 512} r={2.5}
+                  fill="rgba(34,197,94,0.8)" stroke="rgba(0,0,0,0.5)" strokeWidth={0.6} />
+              )}
+            </g>
+          ))}
+
+          {/* Plantas de spike */}
+          {(heatData?.plants || []).map((p: any, i: number) => (
+            <g key={`plant-${i}`}>
+              <circle cx={p.nx * 512} cy={p.ny * 512} r={9}
+                fill="rgba(251,191,36,0.25)" stroke="#FBB724" strokeWidth={2} />
+              <text x={p.nx * 512} y={p.ny * 512} textAnchor="middle" dominantBaseline="central"
+                fontSize="14" fontFamily="serif">💣</text>
+            </g>
+          ))}
+
+          {/* Callouts / Zonas */}
+          {showZones && (heatData?.callouts || []).map((co: any, i: number) => (
+            <g key={`co-${i}`}>
+              <rect x={co.nx * 512 - 30} y={co.ny * 512 - 7} width={60} height={14} rx={2}
+                fill="rgba(0,0,0,0.65)" />
+              <text x={co.nx * 512} y={co.ny * 512} textAnchor="middle" dominantBaseline="central"
+                fontSize="9" fontWeight="bold" fontFamily="sans-serif" fill="rgba(255,255,255,0.85)">
+                {co.name}
+              </text>
+            </g>
+          ))}
+        </svg>
+
+        {/* Leyenda HTML sobre el mapa */}
+        <div className="absolute bottom-2 left-2 rounded-lg px-3 py-2 text-[10px] space-y-1 z-10"
+          style={{ background: 'rgba(6,8,18,0.92)' }}>
+          {mode === 'diff' ? (
+            <>
+              <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-green-500 inline-block"/>Zona dominante (kills)</div>
+              <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-red-500 inline-block"/>Zona peligrosa (muertes)</div>
+            </>
+          ) : mode === 'kills' ? (
+            <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-green-500 inline-block"/>Kills</div>
+          ) : mode === 'deaths' ? (
+            <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-red-500 inline-block"/>Muertes</div>
+          ) : (
+            <>
+              <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-yellow-400 inline-block"/>Alta actividad</div>
+              <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-orange-500 inline-block"/>Zona caliente</div>
+            </>
+          )}
+        </div>
+
+        {/* Contador coords */}
+        <div className="absolute top-1 right-1 rounded px-2 py-0.5 text-[10px] font-mono z-10"
+          style={{ background: 'rgba(6,8,18,0.88)', color: coordKills > 0 ? '#22c55e' : '#f87171' }}>
+          {coordKills}/{heatData?.totalKills || allKills.length} coords · {mapName}
+        </div>
 
         {/* Spinner */}
         {loading && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 z-10"
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 z-20"
             style={{ background: 'rgba(10,11,18,0.88)' }}>
             <Loader2 className="w-8 h-8 animate-spin text-red-400" />
             <p className="text-xs text-muted-foreground">Cargando {mapName}…</p>
@@ -1161,7 +1242,7 @@ function HeatmapTab({ match, focusPuuid, setFocusPuuid }: any) {
 
         {/* Sin datos */}
         {!heatData && !loading && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-muted-foreground">
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-muted-foreground z-20">
             <p className="text-sm">Sin datos de heatmap</p>
             <p className="text-xs opacity-50">Necesita servidor en localhost:3001</p>
           </div>
